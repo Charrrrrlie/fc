@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+    <script type="text/javascript" src="jQuery/jquery-3.4.1.js"></script>
+    <script type="text/javascript" src="//api.map.baidu.com/api?v=2.0&ak=P0iWWunpQ3Wa1Z0GG6QpGBCMVchbTkAn"></script>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@turf/turf@5/turf.min.js"></script>
+    <title>人流聚集区</title>
+    <style type="text/css">
+        ul,li{list-style: none;margin:0;padding:0;float:left;}
+        html{height:100%}
+        body{height:100%;margin:0px;padding:0px;font-family:"微软雅黑";}
+        #container{height:80%;width:100%;}
+        #control{height:20%;width:100%}
+    </style>
+</head>
+<body>
+<div id="container"></div>
+<div id="control">
+    <a>日期:</a> <input type="text" id="clusterdate" value="20181003">
+    </br>
+    <a>时间段:</a> <select name="clustertimeselect" id="clustertime">
+        <option value="0">0：00~4：00</option>
+        <option value="1">4：00~8：00</option>
+        <option value="2">8：00~12：00</option>
+        <option value="3">12：00~16：00</option>
+        <option value="4">16：00~20：00</option>
+        <option value="5">20：00~24：00</option>
+    </select>
+    </br>
+    <input type="button" id="result" value="查询">
+</div>
+</div>
+</body>
+</html>
+<script type="text/javascript">
+    var map = new BMap.Map("container");          // 创建地图实例
+
+    var point = new BMap.Point(123.38333,41.79800);            //沈阳  123.38333 41.80000
+
+    // //自定义样式
+    // var styleJson;
+    // $.ajax({
+    //     url:'custom_map_config.json',
+    //     async:false,
+    //     success:function(data)
+    //     {
+    //         styleJson=data;
+    //     }
+    // })
+    //  map.setMapStyle({styleJson:"styleJson"});
+
+    map.setMapStyle({style:"grayscale"});
+
+    map.centerAndZoom(point, 13);             // 初始化地图，设置中心点坐标和地图级别
+    map.enableScrollWheelZoom();          // 允许滚轮缩放
+    map.addControl(new BMap.NavigationControl());  //添加导航缩放
+    map.addControl(new BMap.ScaleControl({anchor: BMAP_ANCHOR_BOTTOM_RIGHT}));// 右下角，添加比例尺
+
+    var points;          //申明全局变量
+    $.ajax({
+        url:'ok.json',            //时间以秒为单位
+        async:false,
+        success: function (data) {
+            points = [].concat.apply([], data.map(function (track) {
+                return track.map(function (seg) {
+                    return seg;
+                });
+            }));
+        }
+    })
+
+    var EachTimePoints=Array(6);   //一天被划分成为六个点进行聚类
+    var EachLabelNum=Array(6);   //每个时间段的聚类数
+
+    for(var i=0;i<6;i++)
+    {
+        EachTimePoints[i]=points.filter(function(x){ return x.time==i });
+
+        EachLabelNum[i]=EachTimePoints[i][0].label;
+        for(var j=0;j<EachTimePoints[i].length;j++)
+        {
+            if(EachTimePoints[i][j].time>EachLabelNum[i])
+                EachLabelNum[i]=EachTimePoints[i][j].label;
+        }
+    }
+
+    var EachTimeClass=Array(6);    //对每个时间段的聚类进行动态划分
+    for(var i=0;i<6;i++)
+    {
+        EachTimeClass[i]=Array(EachLabelNum[i]+1);
+    }
+
+    for(var i=0;i<6;i++)
+    {
+        for(var j=0;j<EachLabelNum[i]+1;j++)
+        {
+            EachTimeClass[i][j]=EachTimePoints[i].filter(function(x){return x.label==j});
+        }
+    }
+
+
+
+    $("#result").click(
+        function(){
+
+
+            map.clearOverlays();  //支持多次刷新
+
+            var clusterTime= $("#clustertime").val();   //时间段
+            var clusterDate=$("#clusterdate").val();    //日期
+
+            var labelNum=EachLabelNum[clusterTime]+1;     //该时间段内的聚类数
+            var arrayCluster=Array(labelNum);     //存储一个时间段内的聚类点
+
+            //将json中多余项去除
+            for(var i=0;i<labelNum;i++)
+            {
+                arrayCluster[i]=Array();
+                for(var j=0;j<EachTimeClass[clusterTime][i].length;j++)
+                {
+                    arrayCluster[i].push([EachTimeClass[clusterTime][i][j].longitude,EachTimeClass[clusterTime][i][j].latitude]);
+                }
+
+            }
+
+            for(var j=0;j<labelNum;j++)
+            {
+                //写成标准geojson格式
+                var geoCluster={
+                    "type": "Feature",
+                    "properties": {},
+                    "geometry": {
+                    "type": "MultiPoint",
+                    "coordinates": arrayCluster[j]
+                                }
+                    }
+
+                //创建缓冲区
+                var buffered = turf.buffer(geoCluster, 0.2, {units: 'miles'});
+
+                //转换成百度地图可视化
+                var newArray=buffered.geometry.coordinates[0];
+                var points=new Array(newArray.length);
+
+                for(var i=0;i<newArray.length;i++)
+                {
+                    points[i]=new BMap.Point(newArray[i][0],newArray[i][1]);
+                }
+
+                var polygon = new BMap.Polygon(points, {strokeColor:"blue", strokeWeight:2, strokeOpacity:0.5});
+
+                map.addOverlay(polygon);
+            }
+        }
+    )
+
+
+</script>

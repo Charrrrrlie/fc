@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html xmlns:name="http://www.w3.org/1999/xhtml">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+    <script type="text/javascript" src="jQuery/jquery-3.4.1.js"></script>
+    <script type="text/javascript" src="//api.map.baidu.com/api?v=2.0&ak=P0iWWunpQ3Wa1Z0GG6QpGBCMVchbTkAn"></script>
+    <script type="text/javascript" src="//api.map.baidu.com/library/Heatmap/2.0/src/Heatmap_min.js"></script>
+    <title>热力图功能示例</title>
+    <style type="text/css">
+        ul,li{list-style: none;margin:0;padding:0;float:left;}
+        html{height:100%}
+        body{height:100%;margin:0px;padding:0px;font-family:"微软雅黑";}
+        #container{height:80%;width:100%;overflow: hidden;margin:0}
+        #control{height:20%;}
+
+        /**/
+        /*从这里开始加  js里面opt也调了一点*/
+        /**/
+        /**/
+        /*地图标题*/
+        .BMap_bubble_title {
+            color:white;
+            font-size:13px;
+            font-weight:bold;
+            text-align:left;
+            padding-left:5px;
+            padding-top:5px;
+            border-bottom:1px solid gray;
+            background-color:#0066b3;
+        }
+        /* 消息内容 */
+        .BMap_bubble_content {
+            background-color:white;
+            font-size:12px;
+            padding-left:5px;
+            padding-top:5px;
+            padding-bottom:100px;
+        }
+        /* 内容 */
+        .BMap_pop div:nth-child(9) {
+            top:35px !important;
+            border-radius:7px;
+        }
+        /* 左上角删除按键 */
+        .BMap_pop img {
+            top:43px !important;
+            left:260px !important;
+        }
+        .BMap_top {
+            display:none;
+        }
+        .BMap_bottom {
+            display:none;
+        }
+        .BMap_center {
+            display:none;
+        }
+        /* 隐藏边角 */
+        .BMap_pop div:nth-child(1) div {
+            display:none;
+        }
+        .BMap_pop div:nth-child(3) {
+            display:none;
+        }
+        .BMap_pop div:nth-child(7) {
+            display:none;
+        }
+        .BMap_pop div:nth-child(2) div {
+            display:none;
+        }
+        .BMap_pop div:nth-child(4) {
+            display:none;
+        }
+        .BMap_pop div:nth-child(5) {
+            display:none;
+        }
+    </style>
+    <script src="../revolution-master (1)/revolution-master/MajesticAdmin-Free-Bootstrap-Admin-Template-master/template/js/stayPoint.js"></script>
+</head>
+<body>
+<div id="container"></div>
+<div id="control">
+    <form>
+        imsi号: <input type="text" id="idNum"> <br>
+        出行日期:  <input type="text" id="date" value="20181003"> <br>
+        <button type="button" onclick="search()"> 查询 </button>
+    </form>
+</div>
+</body>
+</html>
+<script type="text/javascript">
+
+    var map = new BMap.Map("container",{enableMapClick:false});          // 创建地图实例
+
+
+    var point = new BMap.Point(123.38333,41.79800);            //沈阳  123.38333 41.80000
+
+    map.centerAndZoom(point, 11);             // 初始化地图，设置中心点坐标和地图级别
+    map.enableScrollWheelZoom();          // 允许滚轮缩放
+    map.addControl(new BMap.NavigationControl());  //添加导航缩放
+    map.addControl(new BMap.ScaleControl({anchor: BMAP_ANCHOR_BOTTOM_RIGHT}));// 右下角，添加比例尺
+
+    var datas = Array(); //存放staypoint.json文件中读取的数据
+    $.ajax({
+        url: 'staypoint.json',
+        async: false,
+        success: function (data) {
+            datas = [].concat.apply([], data.map(function (track) {
+                return track.map(function (seg) {
+                    return seg;
+                });
+            }));
+        }
+    });
+
+    /**
+     * 数据预处理
+     */
+    function Content(type, stime, etime)
+    {
+        this.type = type;
+        this.stime = stime;
+        this.etime = etime;
+    }
+
+    var indexes = Array();
+    var stayPoints = Array();
+    for (var i = 0; i < datas.length; i++)
+    {
+        var s = datas[i].lng.toString() + datas[i].lat.toString();
+        if ($.inArray(s, indexes) === -1)
+        {
+            indexes.push(s);
+            var point = new BMap.Point(datas[i].lng, datas[i].lat);
+            stayPoints.push(point);
+        }
+    }
+
+    var contents = new Array(stayPoints.length);
+    for (var i = 0; i < contents.length; i++)
+    {
+        contents[i] = [];
+    }
+
+    for (var i = 0; i < datas.length; i++)
+    {
+        var s = datas[i].lng.toString() + datas[i].lat.toString();
+        var index = indexes.indexOf(s);
+        contents[index].push(new Content(datas[i].type, datas[i].stime, datas[i].etime));
+    }
+
+    stayPoints.forEach(function (value, index) {
+        var point = new BMap.Point(value.lng, value.lat);
+        var mark = new BMap.Marker(point);
+        map.addOverlay(mark);
+
+
+        var message = "<table border='1'>" + "<caption>" + "驻留点信息" + "</caption>";
+        message += "<tr>" + "<td>" + "类型" + "</td>" + "<td>" + "驻留开始时间" + "</td>" + "<td>" + "驻留结束时间" + "</td>" + "</tr>";
+        for (var j = 0; j < contents[index].length; j++) {
+            message += "<tr>" + "<td>" + contents[index][j].type.toString() + "</td>" + "<td>" +
+                contents[index][j].stime.toString() + "</td>" + "<td>" + contents[index][j].etime.toString() +
+                "</td>" + "</tr>";
+        }
+        message += "</table>";
+
+        addClickHandler(message, mark);
+        //addDivHandler(message,mark);
+    });
+
+    function addClickHandler(message, mark)
+    {
+        mark.addEventListener("click", function (e) {
+            openInfo(message, e);
+        });
+    }
+
+    //////////////////////////////////////////////
+    //width和height参数调整     title应该要根据表格你改了之后再修改
+    ///////////////////////////////////////////////
+    var opts = {
+        width: 260,
+        height: 160,
+        title: "Type/StartTime/EndTime",
+        enableMessage: true
+    };
+
+    function openInfo(message, e) {
+        var p = e.target;
+        var point = new BMap.Point(p.getPosition().lng, p.getPosition().lat);
+        var infoWindow = new BMap.InfoWindow(message, opts);
+        map.openInfoWindow(infoWindow, point);
+    }
+    //判断浏览区是否支持canvas
+    function isSupportCanvas(){
+        var elem = document.createElement('canvas');
+        return !!(elem.getContext && elem.getContext('2d'));
+    }
+
+</script>

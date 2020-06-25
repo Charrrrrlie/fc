@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html xmlns:name="http://www.w3.org/1999/xhtml">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+    <script type="text/javascript" src="jQuery/jquery-3.4.1.js"></script>
+    <script type="text/javascript" src="//api.map.baidu.com/api?v=2.0&ak=P0iWWunpQ3Wa1Z0GG6QpGBCMVchbTkAn"></script>
+    <script type="text/javascript" src="//api.map.baidu.com/library/Heatmap/2.0/src/Heatmap_min.js"></script>
+    <title>单人出行路径规划</title>
+    <style type="text/css">
+        ul,li{list-style: none;margin:0;padding:0;float:left;}
+        html{height:100%}
+        body{height:100%;margin:0px;padding:0px;font-family:"微软雅黑";}
+        #container{height:80%;width:100%;}
+        #control{height:20%;width:100%}
+    </style>
+</head>
+<body>
+<div id="container"></div>
+<div id="control">
+    <a>imsi号:</a><input type="text" id="idnum">
+    </br>
+    <a>出行日期:</a> <input type="text" id="date" value="20181003">
+    </br>
+    <input type="button" id="result" value="查询"><input type="button" id="refresh" value="刷新">
+</div>
+</div>
+</body>
+</html>
+<script type="text/javascript">
+
+    var map = new BMap.Map("container");          // 创建地图实例
+
+    var point = new BMap.Point(123.38333,41.79800);            //沈阳  123.38333 41.80000
+
+    // //自定义样式
+    // var styleJson;
+    // $.ajax({
+    //     url:'custom_map_config.json',
+    //     async:false,
+    //     success:function(data)
+    //     {
+    //         styleJson=data;
+    //     }
+    // })
+    //  map.setMapStyle({styleJson:"styleJson"});
+
+    map.setMapStyle({style:"grayscale"});
+
+    map.centerAndZoom(point, 13);             // 初始化地图，设置中心点坐标和地图级别
+    map.enableScrollWheelZoom();          // 允许滚轮缩放
+    map.addControl(new BMap.NavigationControl());  //添加导航缩放
+    map.addControl(new BMap.ScaleControl({anchor: BMAP_ANCHOR_BOTTOM_RIGHT}));// 右下角，添加比例尺
+
+    var points;          //申明全局变量
+    $.ajax({
+        url:'moveDatawithroute.json',            //时间以秒为单位
+        async:false,
+        success: function (data) {
+            points = [].concat.apply([], data.map(function (track) {
+                return track.map(function (seg) {
+                    return seg;
+                });
+            }));
+        }
+    })
+
+    //为路线添加箭头
+    // var sy = new BMap.Symbol(BMap_Symbol_SHAPE_BACKWARD_OPEN_ARROW, {
+    //     scale: 0.6,//图标缩放大小
+    //     strokeColor:'#fff',//设置矢量图标的线填充颜色
+    //     strokeWeight: '2',//设置线宽
+    // });
+    // var icons = new BMap.IconSequence(sy, '10', '30');
+
+    //用户输入查询后的回调
+    $("#result").click(
+        function () {
+
+            //分别读取imsi和查询日期
+            var idnum=$('#idnum').val();
+            var date=$('#date').val();
+
+            var mergeID=Array();        //存放出现过的ID 同时也作为索引
+            var mergeSPoints;            //存放每一条路径开始对应的点
+            var mergeEPoints;            //存放每一条路径结束对应的点
+            var mergeRoute;
+
+            for (var i=0;i<points.length;i++)
+            {
+                var flag = mergeID.indexOf(points[i].imsi);
+                if (flag == -1)   //如果没有出现
+                {
+                    mergeID.push(points[i].imsi);
+                }
+            }
+
+            // //将出现过的ID全部存入新的数组中
+            mergeSPoints=new Array(mergeID.length);
+            mergeEPoints=new Array(mergeID.length);
+            mergeRoute=new Array(mergeID.length);
+
+            for (var i=0; i<mergeID.length; i++)
+            {
+                mergeSPoints[i]=new Array();
+                mergeEPoints[i]=new Array();
+                mergeRoute[i]=new Array();
+            }//声明二维数组
+
+            //
+            for(var i=0;i<points.length;i++)
+            {
+                //筛选日期
+                // if( points[i].timestamp>=Number(date)*1000000  &&  points[i].timestamp<(Number(date)+1)*1000000)
+                {
+                    var index=mergeID.indexOf(points[i].imsi);   //id号和数组下标索引
+                    var sp=new BMap.Point(points[i].slng,points[i].slat);
+                    var ep=new BMap.Point(points[i].elng,points[i].elat);
+
+                    mergeSPoints[index].push(sp);
+                    mergeEPoints[index].push(ep);
+                    mergeRoute[index].push(points[i].route);
+                }
+            }
+
+            //从imsi转换路径标号
+            var id=mergeID.indexOf(Number(idnum));
+
+            //从imsi获取单人路径
+            var length=mergeRoute[id].length;
+
+            //路线可视化
+            for(var i=0;i<length;i++)
+            {
+                switch(mergeRoute[id][i])           //不同路径做出行分析
+                {
+                    case 1:  showWalkPath(mergeSPoints[id][i],mergeEPoints[id][i]);
+                             break;            // 1步行
+                    case 2:  showDrivePath(mergeSPoints[id][i],mergeEPoints[id][i]);
+                             break;            // 2私家车
+                    case 3:  showBusPath(mergeSPoints[id][i],mergeEPoints[id][i]);
+                             break;           // 3公交
+                    case 4:  showMetroPath(mergeSPoints[id][i],mergeEPoints[id][i]);
+                             break;           // 4地铁
+                    default: alert('需要重新判断出行方式');
+                }
+            }
+
+            //添加整体顺序标号
+
+
+            //将所有结束点按顺序编号
+            mergeEPoints[id].forEach(function (val,index){
+                var pt=new BMap.Point(val.lng,val.lat);
+                var mark=new BMap.Marker(pt);      //添加标记
+                map.addOverlay(mark);
+
+                var lab=new BMap.Label(index+2,{position:pt});    //为标记添加标号
+                map.addOverlay(lab);
+            })
+
+            //起点的第一个点作为1号
+            var mark=new BMap.Marker(mergeSPoints[id][0]);
+            var lab=new BMap.Label(1,{position:mergeSPoints[id][0]});
+            map.addOverlay(mark);
+            map.addOverlay(lab);
+
+
+            //步行路线获取
+            function showWalkPath(startPoint, endPoint)
+            {
+                //关闭自动跟随获取路线autoViewport
+                var walking = new BMap.WalkingRoute(map, {renderOptions:{map: map, autoViewport: false},
+                    onPolylinesSet:function(routes) {
+                        searchRoute = routes[0].getPolyline();//导航路线
+                        map.addOverlay(searchRoute);
+                    },
+                    onMarkersSet:function(routes) {
+                        map.removeOverlay(routes[0].marker); //删除起点
+                        map.removeOverlay(routes[1].marker);//删除终点
+                    }
+                });
+                walking.search(startPoint,endPoint);
+            }
+
+            //驾车路线获取
+            function showDrivePath(startPoint, endPoint)
+            {
+                //关闭自动跟随获取路线autoViewport
+                var driving = new BMap.DrivingRoute(map, {renderOptions:{map: map, autoViewport: false},
+                    onPolylinesSet:function(routes) {
+                        searchRoute = routes[0].getPolyline();//导航路线
+                        map.addOverlay(searchRoute);
+                    },
+                    onMarkersSet:function(routes) {
+                        map.removeOverlay(routes[0].marker); //删除起点
+                        map.removeOverlay(routes[1].marker);//删除终点
+                    }
+                });
+                driving.search(startPoint,endPoint);
+            }
+
+            //公交路线获取
+            function showBusPath(startPoint, endPoint)
+            {
+                //关闭自动跟随获取路线autoViewport
+                var bus = new BMap.TransitRoute(map, {renderOptions:{map: map, autoViewport: false},
+                    onPolylinesSet:function(routes) {
+                        searchRoute = routes[0].getPolyline(); //导航路线
+                        map.addOverlay(searchRoute);
+                    },
+                    onMarkersSet:function(routes) {
+                        map.removeOverlay(routes[0].marker);   //删除起点
+                        map.removeOverlay(routes[1].marker);   //删除终点
+                    }
+                });
+                bus.setPolicy(BMAP_TRANSIT_POLICY_AVOID_SUBWAYS);         //不乘地铁
+                bus.search(startPoint,endPoint);
+            }
+
+            function showMetroPath(startPoint,endPoint)
+            {
+                //关闭自动跟随获取路线autoViewport
+                var bus = new BMap.TransitRoute(map, {renderOptions:{map: map, autoViewport: false},
+                    onPolylinesSet:function(routes) {
+                        searchRoute = routes[0].getPolyline(); //导航路线
+                        map.addOverlay(searchRoute);
+                    },
+                    onMarkersSet:function(routes) {
+                        map.removeOverlay(routes[0].marker);   //删除起点
+                        map.removeOverlay(routes[1].marker);   //删除终点
+                    }
+                });
+                bus.setPolicy(BMAP_TRANSIT_POLICY_LEAST_TIME);         //乘地铁 用最少时间换算
+                bus.search(startPoint,endPoint);
+            }
+        })
+
+    $("#refresh").click(
+        function () {
+            map.clearOverlays();
+            $('#idnum').val(null);
+            $('#date').val('20181003');
+        }
+    )
+
+    //判断浏览区是否支持canvas
+    function isSupportCanvas(){
+        var elem = document.createElement('canvas');
+        return !!(elem.getContext && elem.getContext('2d'));
+    }
+
+</script>
